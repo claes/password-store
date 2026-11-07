@@ -94,7 +94,7 @@ List names of passwords inside the tree that match \fIpass-names\fP by using the
 .BR tree (1)
 program. This command is alternatively named \fBsearch\fP.
 .TP
-\fBshow\fP [ \fI--clip\fP[=\fIline-number\fP], \fI-c\fP[\fIline-number\fP] ] [ \fI--qrcode\fP[=\fIline-number\fP], \fI-q\fP[\fIline-number\fP] ] \fIpass-name\fP
+\fBshow\fP [ \fI--clip-command\fP \fIexecutable\fP ] [ \fI--clip\fP[=\fIline-number\fP], \fI-c\fP[\fIline-number\fP] ] [ \fI--qrcode\fP[=\fIline-number\fP], \fI-q\fP[\fIline-number\fP] ] \fIpass-name\fP
 Decrypt and print a password named \fIpass-name\fP. If \fI--clip\fP or \fI-c\fP
 is specified, do not print the password but instead copy the first (or otherwise specified)
 line to the clipboard using
@@ -105,6 +105,21 @@ and then restore the clipboard after 45 (or \fIPASSWORD_STORE_CLIP_TIME\fP) seco
 or \fI-q\fP is specified, do not print the password but instead display a QR code using
 .BR qrencode (1)
 either to the terminal or graphically if supported.
+If \fI--clip-command executable\fP is specified, it implies \fI--clip\fP and delegates
+clipboard handling to that executable instead of the built-in handler. The
+executable may be a path (including spaces) or a binary name resolved through
+\fIPATH\fP. It is invoked without arguments and receives the selected password
+on standard input without an added newline. Use a wrapper script for arguments
+or shell expressions. This option cannot be combined with \fI--qrcode\fP.
+The command runs synchronously and must arrange any background clipboard
+ownership, clearing, or restoration itself. Standard output is discarded;
+standard error is preserved. A nonzero exit is reported as failure without
+falling back to the built-in handler. No automatic clearing is scheduled by
+pass, and \fIPASSWORD_STORE_CLIP_TIME\fP is not applied to external commands.
+The source distribution includes \fIcontrib/clipboard/pass-clip-template.sh\fP:
+copy it to a location of your choice, customize the backend invocation, make it
+executable, and invoke it with \fI--clip-command /path/to/copy-password\fP.
+The template uses wl-copy and does not schedule automatic clearing.
 .TP
 \fBinsert\fP [ \fI--echo\fP, \fI-e\fP | \fI--multiline\fP, \fI-m\fP ] [ \fI--force\fP, \fI-f\fP ] \fIpass-name\fP
 Insert a new password into the password store called \fIpass-name\fP. This will
@@ -124,7 +139,7 @@ ensure that temporary files are created in \fI/dev/shm\fP in order to avoid writ
 difficult-to-erase disk sectors. If \fI/dev/shm\fP is not accessible, fallback to
 the ordinary \fITMPDIR\fP location, and print a warning.
 .TP
-\fBgenerate\fP [ \fI--no-symbols\fP, \fI-n\fP ] [ \fI--clip\fP, \fI-c\fP ] [ \fI--in-place\fP, \fI-i\fP | \fI--force\fP, \fI-f\fP ] \fIpass-name [pass-length]\fP
+\fBgenerate\fP [ \fI--clip-command\fP \fIexecutable\fP ] [ \fI--no-symbols\fP, \fI-n\fP ] [ \fI--clip\fP, \fI-c\fP ] [ \fI--in-place\fP, \fI-i\fP | \fI--force\fP, \fI-f\fP ] \fIpass-name [pass-length]\fP
 Generate a new password using \fB/dev/urandom\fP of length \fIpass-length\fP
 (or \fIPASSWORD_STORE_GENERATED_LENGTH\fP if unspecified) and insert into
 \fIpass-name\fP. If \fI--no-symbols\fP or \fI-n\fP is specified, do not use
@@ -143,6 +158,8 @@ either to the terminal or graphically if supported. Prompt before overwriting an
 unless \fI--force\fP or \fI-f\fP is specified. If \fI--in-place\fP or \fI-i\fP is
 specified, do not interactively prompt, and only replace the first line of the password
 file with the new generated password, keeping the remainder of the file intact.
+The \fI--clip-command\fP option works as described for \fBshow\fP. If copying
+fails, the generated password remains saved and pass exits with an error.
 .TP
 \fBrm\fP [ \fI--recursive\fP, \fI-r\fP ] [ \fI--force\fP, \fI-f\fP ] \fIpass-name\fP
 Remove the password named \fIpass-name\fP from the password store. This command is

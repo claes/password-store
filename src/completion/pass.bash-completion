@@ -84,6 +84,20 @@ _pass()
 {
 	COMPREPLY=()
 	local cur="${COMP_WORDS[COMP_CWORD]}"
+	local previous="${COMP_WORDS[COMP_CWORD-1]}" clip_prefix=""
+	if [[ $previous == --clip-command || $cur == --clip-command=* ||
+	      ( $previous == = && ${COMP_WORDS[COMP_CWORD-2]} == --clip-command ) ]]; then
+		[[ $cur == = ]] && cur=""
+		if [[ $cur == --clip-command=* ]]; then
+			clip_prefix="--clip-command="
+			cur="${cur#*=}"
+		fi
+		local candidate
+		while IFS= read -r candidate; do
+			COMPREPLY+=( "$clip_prefix$candidate" )
+		done < <(compgen -c -- "$cur"; compgen -f -- "$cur")
+		return
+	fi
 	local commands="init ls find grep show insert generate edit rm mv cp git help version ${PASSWORD_STORE_EXTENSION_COMMANDS[*]}"
 	if [[ $COMP_CWORD -gt 1 ]]; then
 		local lastarg="${COMP_WORDS[$COMP_CWORD-1]}"
@@ -101,7 +115,7 @@ _pass()
 				_pass_complete_entries
 				;;
 			show|-*)
-				COMPREPLY+=($(compgen -W "-c --clip" -- ${cur}))
+				COMPREPLY+=($(compgen -W "-c --clip --clip-command" -- ${cur}))
 				_pass_complete_entries 1
 				;;
 			insert)
@@ -109,7 +123,7 @@ _pass()
 				_pass_complete_entries
 				;;
 			generate)
-				COMPREPLY+=($(compgen -W "-n --no-symbols -c --clip -f --force -i --in-place" -- ${cur}))
+				COMPREPLY+=($(compgen -W "-n --no-symbols -c --clip --clip-command -f --force -i --in-place" -- ${cur}))
 				_pass_complete_entries
 				;;
 			cp|copy|mv|rename)
@@ -136,7 +150,7 @@ _pass()
 			"__password_store_extension_complete_${COMP_WORDS[1]}"
 		fi
 	else
-		COMPREPLY+=($(compgen -W "${commands}" -- ${cur}))
+		COMPREPLY+=($(compgen -W "${commands} --clip --clip-command" -- ${cur}))
 		_pass_complete_entries 1
 	fi
 }
