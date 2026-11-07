@@ -113,3 +113,16 @@ complete -c $PROG -f -n '__fish_pass_uses_command grep' -a '(begin
     set -e cmd[1 2] # Drop "pass grep".
     complete -C"grep $cmd"
 end)'
+
+# External clipboard helpers accept a binary name or executable path.
+function __fish_pass_clip_command_context
+    set -l words (commandline -opc)
+    if __fish_seen_subcommand_from show ls list generate
+        return 0
+    end
+    if test (count $words) -eq 1; or string match -q -- '-*' $words[2]
+        return 0
+    end
+    return 1
+end
+complete -c $PROG -n '__fish_pass_clip_command_context' -l clip-command -r -a '(__fish_complete_command)' -d 'Delegate clipboard handling to an executable'

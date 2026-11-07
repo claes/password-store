@@ -242,6 +242,25 @@ source "$(dirname "$0")/platform/$(uname | cut -d _ -f 1 | tr '[:upper:]' '[:low
 # END platform definable
 #
 
+# Resolve binary names to external executables, before accessing passwords.
+resolve_clip_command() {
+	local executable="$1"
+	[[ -n $executable ]] || die "Error: Clipboard command must not be empty."
+	if [[ $executable != */* ]]; then
+		executable="$(type -P -- "$executable")" || die "Error: Clipboard command not found: $1"
+	fi
+	[[ -f $executable && -x $executable ]] || die "Error: Clipboard command is not executable: $1"
+	printf '%s\n' "$executable"
+}
+
+copy_to_clipboard() {
+	if [[ -n $clip_command ]]; then
+		printf '%s' "$1" | "$clip_command" >/dev/null || die "Error: External clipboard command failed."
+		echo "Copied $2 to clipboard using external command."
+	else
+		clip "$@"
+	fi
+}
 
 #
 # BEGIN subcommand functions
@@ -274,9 +293,10 @@ cmd_usage() {
 	        List passwords.
 	    $PROGRAM find pass-names...
 	    	List passwords that match pass-names.
-	    $PROGRAM [show] [--clip[=line-number],-c[line-number]] pass-name
+	    $PROGRAM [show] [--clip[=line-number],-c[line-number]] [--clip-command executable] pass-name
 	        Show existing password and optionally put it on the clipboard.
-	        If put on the clipboard, it will be cleared in $CLIP_TIME seconds.
+	        The built-in clipboard handler clears it in $CLIP_TIME seconds.
+	        --clip-command implies --clip and delegates clipboard handling to an executable.
 	    $PROGRAM grep [GREPOPTIONS] search-string
 	        Search for password files containing search-string when decrypted.
 	    $PROGRAM insert [--echo,-e | --multiline,-m] [--force,-f] pass-name
@@ -285,9 +305,10 @@ cmd_usage() {
 	        overwriting existing password unless forced.
 	    $PROGRAM edit pass-name
 	        Insert a new password or edit an existing password using ${EDITOR:-vi}.
-	    $PROGRAM generate [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] pass-name [pass-length]
+	    $PROGRAM generate [--no-symbols,-n] [--clip,-c] [--clip-command executable] [--in-place,-i | --force,-f] pass-name [pass-length]
 	        Generate a new password of pass-length (or $GENERATED_LENGTH if unspecified) with optionally no symbols.
-	        Optionally put it on the clipboard and clear board after $CLIP_TIME seconds.
+	        Optionally copy using the built-in handler (clears after $CLIP_TIME seconds),
+	        or delegate clipboard handling with --clip-command (implies --clip).
 	        Prompt before overwriting existing password unless forced.
 	        Optionally replace only the first line of an existing file with a new password.
 	    $PROGRAM rm [--recursive,-r] [--force,-f] pass-name
@@ -356,17 +377,18 @@ cmd_init() {
 }
 
 cmd_show() {
-	local opts selected_line clip=0 qrcode=0
-	opts="$($GETOPT -o q::c:: -l qrcode::,clip:: -n "$PROGRAM" -- "$@")"
+	local opts selected_line=1 clip=0 qrcode=0 clip_command=""
+	opts="$($GETOPT -o q::c:: -l qrcode::,clip::,clip-command: -n "$PROGRAM" -- "$@")"
 	local err=$?
 	eval set -- "$opts"
 	while true; do case $1 in
 		-q|--qrcode) qrcode=1; selected_line="${2:-1}"; shift 2 ;;
+		--clip-command) clip_command="$(resolve_clip_command "$2")" || exit 1; clip=1; shift 2 ;;
 		-c|--clip) clip=1; selected_line="${2:-1}"; shift 2 ;;
 		--) shift; break ;;
 	esac done
 
-	[[ $err -ne 0 || ( $qrcode -eq 1 && $clip -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--clip[=line-number],-c[line-number]] [--qrcode[=line-number],-q[line-number]] [pass-name]"
+	[[ $err -ne 0 || ( $qrcode -eq 1 && $clip -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--clip[=line-number],-c[line-number]] [--qrcode[=line-number],-q[line-number]] [--clip-command executable] [pass-name]"
 
 	local pass
 	local path="$1"
@@ -381,7 +403,7 @@ cmd_show() {
 			pass="$($GPG -d "${GPG_OPTS[@]}" "$passfile" | tail -n +${selected_line} | head -n 1)" || exit $?
 			[[ -n $pass ]] || die "There is no password to put on the clipboard at line ${selected_line}."
 			if [[ $clip -eq 1 ]]; then
-				clip "$pass" "$path"
+				copy_to_clipboard "$pass" "$path"
 			elif [[ $qrcode -eq 1 ]]; then
 				qrcode "$pass" "$path"
 			fi
@@ -500,20 +522,21 @@ cmd_edit() {
 }
 
 cmd_generate() {
-	local opts qrcode=0 clip=0 force=0 characters="$CHARACTER_SET" inplace=0 pass
-	opts="$($GETOPT -o nqcif -l no-symbols,qrcode,clip,in-place,force -n "$PROGRAM" -- "$@")"
+	local opts qrcode=0 clip=0 clip_command="" force=0 characters="$CHARACTER_SET" inplace=0 pass
+	opts="$($GETOPT -o nqcif -l no-symbols,qrcode,clip,clip-command:,in-place,force -n "$PROGRAM" -- "$@")"
 	local err=$?
 	eval set -- "$opts"
 	while true; do case $1 in
 		-n|--no-symbols) characters="$CHARACTER_SET_NO_SYMBOLS"; shift ;;
 		-q|--qrcode) qrcode=1; shift ;;
+		--clip-command) clip_command="$(resolve_clip_command "$2")" || exit 1; clip=1; shift 2 ;;
 		-c|--clip) clip=1; shift ;;
 		-f|--force) force=1; shift ;;
 		-i|--in-place) inplace=1; shift ;;
 		--) shift; break ;;
 	esac done
 
-	[[ $err -ne 0 || ( $# -ne 2 && $# -ne 1 ) || ( $force -eq 1 && $inplace -eq 1 ) || ( $qrcode -eq 1 && $clip -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--no-symbols,-n] [--clip,-c] [--qrcode,-q] [--in-place,-i | --force,-f] pass-name [pass-length]"
+	[[ $err -ne 0 || ( $# -ne 2 && $# -ne 1 ) || ( $force -eq 1 && $inplace -eq 1 ) || ( $qrcode -eq 1 && $clip -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--no-symbols,-n] [--clip,-c] [--qrcode,-q] [--clip-command executable] [--in-place,-i | --force,-f] pass-name [pass-length]"
 	local path="$1"
 	local length="${2:-$GENERATED_LENGTH}"
 	check_sneaky_paths "$path"
@@ -544,7 +567,7 @@ cmd_generate() {
 	git_add_file "$passfile" "$verb generated password for ${path}."
 
 	if [[ $clip -eq 1 ]]; then
-		clip "$pass" "$path"
+		copy_to_clipboard "$pass" "$path"
 	elif [[ $qrcode -eq 1 ]]; then
 		qrcode "$pass" "$path"
 	else
