@@ -82,7 +82,10 @@ test_expect_success 'Generated password survives clipboard failure' '
 '
 
 test_expect_success 'Default dispatcher respects a platform clip override' '
-	sed "/^PROGRAM=/,\$d" "$PASS" > functions.sh &&
+	# Packages may set PASS to an installed wrapper. Load only the dispatcher
+	# from the source, without executing the wrapper or the command entrypoint.
+	sed -n "/^copy_to_clipboard() {$/,/^}$/p" "$TEST_HOME/../src/password-store.sh" > functions.sh &&
+	test -s functions.sh &&
 	(
 		. ./functions.sh
 		clip() { printf "%s:%s" "$1" "$2"; }
